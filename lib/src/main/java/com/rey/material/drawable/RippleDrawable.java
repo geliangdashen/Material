@@ -1,5 +1,6 @@
 package com.rey.material.drawable;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
@@ -20,6 +21,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
@@ -34,8 +36,10 @@ import com.rey.material.util.ColorUtil;
 import com.rey.material.util.ThemeUtil;
 import com.rey.material.util.ViewUtil;
 
+
 public class RippleDrawable extends Drawable implements Animatable,	OnTouchListener {
-	
+
+	private static final String TAG = "RippleDrawable";
 	private boolean mRunning = false;
 		
 	private Paint mShaderPaint;
@@ -80,7 +84,9 @@ public class RippleDrawable extends Drawable implements Animatable,	OnTouchListe
 	
 	private static final float[] GRADIENT_STOPS = new float[]{0f, 0.99f, 1f};
 	private static final float GRADIENT_RADIUS = 16;
-		
+	private float mCurrentX,mCurrentY;
+	private ValueAnimator mGrowthAnimation;
+
 	private RippleDrawable(Drawable backgroundDrawable, int backgroundAnimDuration, int backgroundColor, int rippleType, int maxRippleRadius, int rippleAnimDuration, int rippleColor, Interpolator inInterpolator, Interpolator outInterpolator, int type, int topLeftCornerRadius, int topRightCornerRadius, int bottomRightCornerRadius, int bottomLeftCornerRadius, int left, int top, int right, int bottom){
 		mBackgroundDrawable = backgroundDrawable;
 		mBackgroundAnimDuration = backgroundAnimDuration;
@@ -114,7 +120,24 @@ public class RippleDrawable extends Drawable implements Animatable,	OnTouchListe
 		
 		mInShader = new RadialGradient(0, 0, GRADIENT_RADIUS, new int[]{mRippleColor, mRippleColor, 0}, GRADIENT_STOPS, Shader.TileMode.CLAMP);		
 		if(mRippleType == TYPE_WAVE)
-			mOutShader = new RadialGradient(0, 0, GRADIENT_RADIUS, new int[]{0, ColorUtil.getColor(mRippleColor, 0f), mRippleColor}, GRADIENT_STOPS, Shader.TileMode.CLAMP);		
+			mOutShader = new RadialGradient(0, 0, GRADIENT_RADIUS, new int[]{0, ColorUtil.getColor(mRippleColor, 0f), mRippleColor}, GRADIENT_STOPS, Shader.TileMode.CLAMP);
+
+		 mGrowthAnimation = ValueAnimator.ofInt(0,100);
+		mGrowthAnimation.setDuration(9999);
+		//2.为目标对象的属性变化设置监听器
+		mGrowthAnimation.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+
+			@Override
+			public void onAnimationUpdate(ValueAnimator animation) {
+				float rippleRadius=mRippleRadius+3+(int)animation.getAnimatedValue()*mMaxRippleRadius/100;
+//				mRippleRadius=(int)animation.getAnimatedValue()*mMaxRippleRadius/100;
+//				Log.d(TAG,"addUpdateListener:rippleRadius:"+rippleRadius);
+				if(setRippleEffect(mCurrentX, mCurrentY, rippleRadius)){
+					invalidateSelf();
+				}
+
+			}
+		});
 	}
 	
 	@Override
@@ -162,6 +185,7 @@ public class RippleDrawable extends Drawable implements Animatable,	OnTouchListe
 			mRipplePoint.set(x, y);
 			mRippleRadius = radius;			
 			radius = mRippleRadius / GRADIENT_RADIUS;
+//			Log.d(TAG,x+":"+y+":"+radius);
 			mMatrix.reset();
 			mMatrix.postTranslate(x, y);
 			mMatrix.postScale(radius, radius, x, y);
@@ -206,6 +230,7 @@ public class RippleDrawable extends Drawable implements Animatable,	OnTouchListe
 	
 	@Override
 	public void draw(Canvas canvas) {
+//		Log.d(TAG, "draw:mRippleRadius:" + mRippleRadius);
 		if(mBackgroundDrawable != null)
 			mBackgroundDrawable.draw(canvas);
 		
@@ -263,9 +288,18 @@ public class RippleDrawable extends Drawable implements Animatable,	OnTouchListe
 	}
 	
 	@Override
-	public boolean onTouch(View v, MotionEvent event) {		
+	public boolean onTouch(View v, MotionEvent event) {
+		mCurrentX=event.getX();
+		mCurrentY=event.getY();
 		switch (event.getAction()) {
 			case MotionEvent.ACTION_DOWN:
+//				Log.d(TAG,"onTouch:down");
+				setRippleState(STATE_PRESS);
+				mRippleRadius=0;
+				mGrowthAnimation.cancel();
+				mGrowthAnimation.start();
+
+				break;
 			case MotionEvent.ACTION_MOVE:
 				if(mState == STATE_OUT || mState == STATE_RELEASE){
 					if(mRippleType == TYPE_WAVE || mRippleType == TYPE_TOUCH_MATCH_VIEW)
@@ -275,12 +309,12 @@ public class RippleDrawable extends Drawable implements Animatable,	OnTouchListe
 					setRippleState(STATE_PRESS);
 				}
 				else if(mRippleType == TYPE_TOUCH){
-					if(setRippleEffect(event.getX(), event.getY(), mRippleRadius))		
+					if(setRippleEffect(event.getX(), event.getY(), mRippleRadius))
 						invalidateSelf();
 				}
 				break;
 			case MotionEvent.ACTION_UP:
-			case MotionEvent.ACTION_CANCEL:	
+			case MotionEvent.ACTION_CANCEL:
 				if(mState != STATE_OUT){
 					if(mState == STATE_HOVER){
 						if(mRippleType == TYPE_WAVE || mRippleType == TYPE_TOUCH_MATCH_VIEW)
@@ -289,7 +323,8 @@ public class RippleDrawable extends Drawable implements Animatable,	OnTouchListe
 						setRippleState(STATE_RELEASE);
 					}
 					else
-						setRippleState(STATE_RELEASE_ON_HOLD);	
+						setRippleState(STATE_RELEASE_ON_HOLD);
+					mGrowthAnimation.cancel();
 				}
 				break;
 		}
